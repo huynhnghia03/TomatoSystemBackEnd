@@ -4,7 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 import os
 from werkzeug.utils import secure_filename
-from flask_mysqldb import MySQL
+import pymysql
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import my_YoloV8
@@ -76,7 +76,7 @@ app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST')
 app.config['MYSQL_USER'] = os.getenv('MYSQL_USER')
 app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD')
 app.config['MYSQL_DB'] = os.getenv('MYSQL_DB')
-mysql = MySQL(app)
+
 
 
 model = my_YoloV8.YOLOv8_ObjectCounter(model_file="best.pt")
@@ -90,11 +90,19 @@ jwt = JWTManager(app)
 classes = ['Early Blight', 'Healthy', 'Late Blight', 'Leaf Miner', 'Leaf Mold', 'Mosaic Virus', 'Septoria', 'Spider Mites', 'Yellow Leaf Curl Virus']
 classesResp = ['EarlyBlight', 'Healthy', 'LateBlight', 'LeafMiner', 'LeafMold', 'MosaicVirus', 'Septoria', 'SpiderMites', 'YellowLeafCurlVirus']
 
+def get_db_connection():
+    connection = pymysql.connect(host=app.config['MYSQL_HOST'],
+                                 user=app.config['MYSQL_USER'],
+                                 password=app.config['MYSQL_PASSWORD'],
+                                 db=app.config['MYSQL_DB'],
+                                 cursorclass=pymysql.cursors.DictCursor)
+    return connection
+mysql = get_db_connection()
 @app.route("/login", methods=["POST"])
 def login():
         email = request.json.get('email')
         pwd = request.json.get('password')
-        cur = mysql.connection.cursor()
+        cur = mysql.cursor()
         cur.execute(f"select * from user where email = '{email}'")
         users = cur.fetchone()
         cur.close()
@@ -113,23 +121,23 @@ def register():
         email = request.json.get("email")
         password = generate_password_hash(request.json.get('password'))
         date = datetime.now()
-        cur = mysql.connection.cursor()
+        cur = mysql.cursor()
         cur.execute(f"SELECT * FROM user WHERE email = '{email}'")
         existing_user = cur.fetchone()
         cur.close()
         if existing_user:
             return jsonify({"auth":False})
         else:
-            cur = mysql.connection.cursor()
+            cur = mysql.cursor()
             user_name = email.split('@')[0]
             print(user_name)
             cur.execute(f"INSERT INTO user (email,username, avatar, password, admin, date) VALUES ('{email}','{user_name}','{''}','{password}','false','{date.date()}')")
-            mysql.connection.commit()
+            mysql.commit()
             return jsonify({"auth":True})
 
 @app.route("/getAllUsers")
 def getUsers():
-    cur = mysql.connection.cursor()
+    cur = mysql.cursor()
     cur.execute(f"SELECT * FROM user")
     users = cur.fetchall()
     cur.execute(f"SELECT * FROM history")
@@ -159,7 +167,7 @@ def getUsers():
 
 @app.route("/detailUser/<email>")
 def detailUser(email):
-    cur = mysql.connection.cursor()
+    cur = mysql.cursor()
     cur.execute(f"SELECT * FROM user where email='{email}'")
     user = cur.fetchone()
     cur.execute(f"SELECT * FROM history where email='{email}'")
@@ -198,7 +206,7 @@ def detailUser(email):
 def history():
     current_user = get_jwt_identity()
     if current_user:
-        cur = mysql.connection.cursor()
+        cur = mysql.cursor()
         cur.execute(f"SELECT * FROM history where email='{current_user}'")
         Executed_DATA = cur.fetchall()
         counters = {
@@ -224,14 +232,14 @@ def history():
 def delete_data():
     id = request.json.get("id")
     print(id)
-    CS = mysql.connection.cursor()
+    CS = mysql.cursor()
     try:
         CS.execute(f"""DELETE FROM history WHERE id = '{id}'""")
-        mysql.connection.commit()
+        mysql.commit()
         CS.close()
         return jsonify({'success': True})
     except Exception as e:
-        mysql.connection.rollback()
+        mysql.rollback()
         CS.close()
         return jsonify({'success': False, 'error': str(e)})
 
@@ -329,13 +337,13 @@ def upload_file():
             filtered_dict = {k: v for k, v in results_dict.items() if k != 'Sum'}
             key = json.dumps(filtered_dict)
             current_time = datetime.now().date()
-            cur = mysql.connection.cursor()
+            cur = mysql.cursor()
             sumShrimp = results_dict['Sum']
             email = current_user
 
             cur.execute(f"""INSERT INTO history (tomato_image,kind, total, c_time, email)
                                                    VALUES ('{file_name}','{key}','{sumShrimp}','{current_time}','{email}')""")
-            mysql.connection.commit()
+            mysql.commit()
             cur.close()
             print(results_dict)
 
@@ -374,13 +382,13 @@ def change_password():
     if email:
         current_pwd = request.json.get('oldpas')
         new_pwd = request.json.get('newpass')
-        cur = mysql.connection.cursor()
+        cur = mysql.cursor()
         cur.execute(f"SELECT password FROM user WHERE email = '{email}'")
         user_data = cur.fetchone()
         print(check_password_hash(user_data[0], current_pwd))
         if user_data and check_password_hash(user_data[0], current_pwd):
             cur.execute(f"UPDATE user SET password = '{generate_password_hash(new_pwd)}' WHERE email = '{email}'")
-            mysql.connection.commit()
+            mysql.commit()
             cur.close()
             return jsonify({'success': True})
         else:
@@ -393,7 +401,7 @@ def change_username():
     if request.form['email']:
         current_username = request.form['username']
         email = request.form['email']
-        cur = mysql.connection.cursor()
+        cur = mysql.cursor()
         cur.execute(f"SELECT * FROM user WHERE email = '{email}'")
         user_data = cur.fetchone()
         path_save = user_data[2]
@@ -405,7 +413,7 @@ def change_username():
                 current_avatar.save(path_save)
         if user_data:
             cur.execute(f"UPDATE user SET username = '{current_username}', avatar='/{path_save}' WHERE email = '{email}'")
-            mysql.connection.commit()
+            mysql.commit()
             cur.execute(f"SELECT * FROM user WHERE email = '{email}'")
             Executed_DATA= cur.fetchone()
             print(Executed_DATA)

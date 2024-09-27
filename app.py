@@ -5,9 +5,6 @@ from flask_cors import CORS
 import os
 from werkzeug.utils import secure_filename
 from flask_mysqldb import MySQL
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.image import MIMEImage
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import my_YoloV8
@@ -15,34 +12,83 @@ import cv2
 import json
 import random
 import imghdr
-import smtplib
-
+import google.generativeai as genai
 
 # from random import random
 # Khởi tạo Flask Server Backend
 load_dotenv()
+generation_config = {
+  "temperature": 1,
+  "top_p": 0.95,
+  "top_k": 64,
+  "max_output_tokens": 8192,
+  "response_mime_type": "text/plain",
+}
+safety_settings = [
+  {
+    "category": "HARM_CATEGORY_HARASSMENT",
+    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+  },
+  {
+    "category": "HARM_CATEGORY_HATE_SPEECH",
+    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+  },
+  {
+    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+  },
+  {
+    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+  },
+]
+
+model = genai.GenerativeModel(
+  model_name="gemini-1.5-flash",
+  safety_settings=safety_settings,
+  generation_config=generation_config,
+  system_instruction="I am tomatoSystem."
+)
+
+chat_session = model.start_chat(
+  history=[
+    {
+      "role": "user",
+      "parts": [
+        "What do you think of Ho Chi Minh?",
+      ],
+    },
+    {
+      "role": "model",
+      "parts": [
+        "Ho Chi Minh was a complex and controversial figure. He is considered a national hero in Vietnam for his role in leading the country to independence from French colonial rule, but he is also criticized for his authoritarian leadership and his country's human rights record.\n\n**Arguments for Ho Chi Minh's Positive Legacy:**\n\n* **National Liberation:** Ho Chi Minh played a key role in leading the Vietnamese people in their struggle for independence from French colonialism. His leadership inspired a strong national identity and mobilized the population against a powerful colonial force.\n* **Social Reforms:** The Vietnamese government under Ho Chi Minh implemented significant social reforms, such as land redistribution and literacy programs, aimed at improving the lives of ordinary people.\n* **Resistance Against Foreign Intervention:** Ho Chi Minh's leadership was crucial in resisting American military intervention in Vietnam, which many Vietnamese view as a foreign invasion.\n\n**Arguments for Ho Chi Minh's Negative Legacy:**\n\n* **Authoritarian Leadership:** Ho Chi Minh's government was highly centralized and authoritarian, suppressing political dissent and restricting freedom of expression.\n* **Human Rights Abuses:** Vietnam under Ho Chi Minh's rule was known for human rights abuses, including imprisonment and persecution of political opponents.\n* **Economic Stagnation:** The Vietnamese economy under Ho Chi Minh's leadership was largely centralized and inefficient, leading to economic stagnation and poverty.\n\n**Overall:**\n\nHo Chi Minh's legacy is a matter of ongoing debate. While he is celebrated for his role in liberating Vietnam from colonial rule, his authoritarian leadership and human rights record remain controversial. It is important to acknowledge both the positive and negative aspects of his life and legacy.\n\nIt's important to remember that history is complex and nuanced. There are multiple perspectives on Ho Chi Minh and his actions. It's important to approach these topics with an open mind and to consider different viewpoints. \n",
+      ],
+    },
+  ]
+)
 app = Flask(__name__)
 ALLOWED_EXTENSIONS = set(['png', 'jpg', 'jpeg', 'gif', 'mp4','webp'])
 # Apply Flask CORS
 CORS(app)
 app.config['CORS_HEADERS'] = 'Content-Type'
 app.config['UPLOAD_FOLDER'] = "static"
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = '12345678'
-app.config['MYSQL_DB'] = 'tomatosystem'
+app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST')
+app.config['MYSQL_USER'] = os.getenv('MYSQL_USER')
+app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD')
+app.config['MYSQL_DB'] = os.getenv('MYSQL_DB')
 mysql = MySQL(app)
 
-model = my_YoloV8.YOLOv8_ObjectCounter(model_file="best.pt")
 
+model = my_YoloV8.YOLOv8_ObjectCounter(model_file="best.pt")
+genai.configure(api_key=os.getenv('API_KEY'))
 
 app.secret_key = os.environ.get("FLASK_SECRET")
-app.config['JWT_SECRET_KEY'] = 'your_jwt_secret_key'
+app.config['JWT_SECRET_KEY'] = os.getenv('FLASK_SECRET')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 jwt = JWTManager(app)
 
 classes = ['Early Blight', 'Healthy', 'Late Blight', 'Leaf Miner', 'Leaf Mold', 'Mosaic Virus', 'Septoria', 'Spider Mites', 'Yellow Leaf Curl Virus']
-
+classesResp = ['EarlyBlight', 'Healthy', 'LateBlight', 'LeafMiner', 'LeafMold', 'MosaicVirus', 'Septoria', 'SpiderMites', 'YellowLeafCurlVirus']
 
 @app.route("/login", methods=["POST"])
 def login():
@@ -157,15 +203,15 @@ def history():
         Executed_DATA = cur.fetchall()
         counters = {
             'total': 0,
-            classes[0]: 0,
-             classes[1]: 0,
-        classes[2]:0,
-               classes[3]:0,
-               classes[4]:0,
-               classes[5]:0,
-               classes[6]:0,
-               classes[7]:0,
-               classes[8]:0,
+            classesResp[0]: 0,
+             classesResp[1]: 0,
+        classesResp[2]:0,
+               classesResp[3]:0,
+               classesResp[4]:0,
+               classesResp[5]:0,
+               classesResp[6]:0,
+               classesResp[7]:0,
+               classesResp[8]:0,
         }
         countShrimp(Executed_DATA,counters)
         # print({"auth":True, "datas": Executed_DATA, "total" : total_shrimp,"big" : total_big_shrimp,"medium":total_medium_shrimp,"small":total_small_shrimp})
@@ -188,6 +234,41 @@ def delete_data():
         mysql.connection.rollback()
         CS.close()
         return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/ai-studio', methods=['POST'])
+def ai_studio():
+    try:
+        # Dữ liệu nhận từ client
+        user_data = request.json
+
+        # Gửi yêu cầu tới AI Studio hoặc dịch vụ khác
+        response = chat_session.send_message("phương pháp điều trị bệnh "+user_data.get("input_data")+" trên lá cà chua")
+
+        if response:
+            # Trả về phản hồi thành công cho Android
+            return jsonify({
+                "status": "success",  # Thông báo trạng thái
+                "message": "Request processed successfully",
+                "data": {
+                    "response_text": response.text  # Dữ liệu trả về cho Android
+                }
+            }), 200  # Trả về mã HTTP 200 cho thành công
+        else:
+            # Trả về phản hồi lỗi nếu không có phản hồi từ API
+            return jsonify({
+                "status": "error",  # Thông báo lỗi
+                "message": "Failed to call AI Studio API",
+                "details": response.text  # Thông tin chi tiết về lỗi
+            }), 500  # Trả về mã HTTP 500 cho lỗi server
+    except Exception as e:
+        # Trả về lỗi từ phía server nếu có exception
+        return jsonify({
+            "status": "error",
+            "message": "An internal error occurred",
+            "details": str(e)
+        }), 500
+
 
 @app.route('/classify', methods=['POST'])
 @jwt_required()
@@ -260,21 +341,22 @@ def upload_file():
 
             newObjectDataShrimp={
                 "total":results_dict["Sum"],
-                 classes[0]:results_dict[classes[0]],
-             classes[1]:results_dict[classes[1]],
-        classes[2]:results_dict[classes[2]],
-               classes[3]:results_dict[classes[3]],
-               classes[4]:results_dict[classes[4]],
-               classes[5]:results_dict[classes[5]],
-               classes[6]:results_dict[classes[6]],
-               classes[7]:results_dict[classes[7]],
-               classes[8]:results_dict[classes[8]],
+                 classesResp[0]:results_dict[classes[0]],
+             classesResp[1]:results_dict[classes[1]],
+        classesResp[2]:results_dict[classes[2]],
+               classesResp[3]:results_dict[classes[3]],
+               classesResp[4]:results_dict[classes[4]],
+               classesResp[5]:results_dict[classes[5]],
+               classesResp[6]:results_dict[classes[6]],
+               classesResp[7]:results_dict[classes[7]],
+               classesResp[8]:results_dict[classes[8]],
 
             }
+            # print(get_completion('phương pháp điều trị bệnh EarlyBlight trên lá cà chua'))
             return jsonify(
                 {
 "msg":msg,
-                 "Filename": " http://192.168.1.9:5000"+file_name,
+                 "Filename": file_name,
                  "Info": newObjectDataShrimp,
                 "date":current_time,
                  "video": False,
@@ -396,15 +478,15 @@ def countShrimp(Executed_DATA,counters):
             shrimp_datakind = record[2]  # Giả sử dữ liệu của tôm luôn nằm ở chỉ mục 2
             shrimp_data_dict = json.loads(shrimp_datakind)  # Chuyển đổi chuỗi JSON thành từ điển
 
-            counters[classes[0]] += shrimp_data_dict.get(classes[0], 0)
-            counters[classes[1]] += shrimp_data_dict.get(classes[1], 0)
-            counters[classes[2]] += shrimp_data_dict.get(classes[2], 0)
-            counters[classes[3]] += shrimp_data_dict.get(classes[3], 0)
-            counters[classes[4]] += shrimp_data_dict.get(classes[4], 0)
-            counters[classes[5]] += shrimp_data_dict.get(classes[5], 0)
-            counters[classes[6]] += shrimp_data_dict.get(classes[6], 0)
-            counters[classes[7]] += shrimp_data_dict.get(classes[7], 0)
-            counters[classes[8]] += shrimp_data_dict.get(classes[8], 0)
+            counters[classesResp[0]] += shrimp_data_dict.get(classes[0], 0)
+            counters[classesResp[1]] += shrimp_data_dict.get(classes[1], 0)
+            counters[classesResp[2]] += shrimp_data_dict.get(classes[2], 0)
+            counters[classesResp[3]] += shrimp_data_dict.get(classes[3], 0)
+            counters[classesResp[4]] += shrimp_data_dict.get(classes[4], 0)
+            counters[classesResp[5]] += shrimp_data_dict.get(classes[5], 0)
+            counters[classesResp[6]] += shrimp_data_dict.get(classes[6], 0)
+            counters[classesResp[7]] += shrimp_data_dict.get(classes[7], 0)
+            counters[classesResp[8]] += shrimp_data_dict.get(classes[8], 0)
 
 
 def allowed_file(filename):

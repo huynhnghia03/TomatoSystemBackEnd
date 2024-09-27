@@ -107,10 +107,10 @@ def login():
         users = cur.fetchone()
         cur.close()
         # check_password_hash(users[3], pwd)
-        if users and  check_password_hash(users[3], pwd):
+        if users and  check_password_hash(users['password'], pwd):
             print("ok")
-            access_token = create_access_token(identity=users[0])
-            return jsonify({"email":users[0],"auth":True,"password":"","username":users[1], "avatar":users[2], "admin":users[4],"date":users[5],"access_token":"Bearer "+access_token})
+            access_token = create_access_token(identity=users['email'])
+            return jsonify({"email":users['email'],"auth":True,"password":"","username":users['username'], "avatar":users['avatar'], "admin":users['admin'],"date":users['date'],"access_token":"Bearer "+access_token})
         else:
             return jsonify({"auth":False})
 

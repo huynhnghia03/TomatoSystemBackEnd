@@ -508,6 +508,5 @@ def color():
 def random_color():
     return tuple(random.randint(0, 255) for _ in range(3))
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=os.environ.get(
-        "FLASK_PORT"), debug=True)
+    app.run(host="0.0.0.0")
 

@@ -252,7 +252,7 @@ def ai_studio():
 
         # Gửi yêu cầu tới AI Studio hoặc dịch vụ khác
         response = chat_session.send_message("phương pháp điều trị bệnh "+user_data.get("input_data")+" trên lá cà chua")
-
+        print(response)
         if response:
             # Trả về phản hồi thành công cho Android
             return jsonify({
